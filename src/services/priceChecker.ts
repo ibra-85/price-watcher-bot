@@ -1,16 +1,27 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { SITE_CONFIGS } from "../config/sites";
 
 type CheerioAPI = cheerio.CheerioAPI;
 
 function normalizePrice(raw: string): number {
-  const normalized = raw
+  const trimmed = raw.replace(/\s+/g, " ").trim();
+
+  // Cas "699€95" ou "699 € 95"
+  const euroCentsMatch = trimmed.match(/(\d+)\s*€\s*(\d{1,2})/);
+  if (euroCentsMatch) {
+    const euros = parseInt(euroCentsMatch[1], 10);
+    const cents = parseInt(euroCentsMatch[2].padEnd(2, "0"), 10);
+    return euros + cents / 100;
+  }
+
+  // Cas classiques "399.99 €", "399,99 €", etc.
+  const cleaned = trimmed
     .replace(/\s/g, "")
     .replace(",", ".")
     .replace(/[^\d.]/g, "");
 
-  const price = parseFloat(normalized);
-
+  const price = parseFloat(cleaned);
   if (isNaN(price)) {
     throw new Error(`Prix non parsable : ${raw}`);
   }
@@ -18,10 +29,6 @@ function normalizePrice(raw: string): number {
   return price;
 }
 
-/**
- * Fetch générique pour n'importe quel site.
- * Réutilisé par tous les scrapers (TopAchat, LDLC, Amazon, etc).
- */
 async function fetchDocument(url: string): Promise<CheerioAPI> {
   const res = await axios.get(url, {
     headers: {
@@ -33,121 +40,58 @@ async function fetchDocument(url: string): Promise<CheerioAPI> {
   return cheerio.load(res.data);
 }
 
-/**
- * Définition d'un "handler" de site :
- * - comment savoir si ce handler s'applique
- * - comment récupérer le prix
- * - comment récupérer le nom
- */
-interface SiteHandler {
-  id: string;
-  match: (host: string, url: string) => boolean;
-  getPrice: ($: CheerioAPI) => number | null;
-  getName: ($: CheerioAPI) => string | null;
+function getSiteConfig(url: string) {
+  const cfg = SITE_CONFIGS.find((s) => s.match(url));
+  if (!cfg) {
+    throw new Error("Site non supporté pour le moment.");
+  }
+  return cfg;
 }
 
-/**
- * Handler TopAchat
- */
-const topAchatHandler: SiteHandler = {
-  id: "topachat",
-  match: (host) => host.includes("topachat"),
-
-  getPrice: ($) => {
-    const candidates = [
-      $(".offer-price__price").first().text().trim(),
-      $(".offer-price").first().text().trim(),
-      $(".price-anico").first().text().trim(),
-      $('[class*="price"]').first().text().trim(),
-    ];
-
-    console.log("[TopAchat] Candidates prix :", candidates);
-
-    const priceText =
-      candidates.find((t) => t && t.length > 0) ||
-      (() => {
-        const bodyText = $("body").text();
-        const match = bodyText.match(/\d+[.,]\d{2}\s*€/);
-        console.log("[TopAchat] Fallback match global :", match?.[0]);
-        return match?.[0] ?? null;
-      })();
-
-    if (!priceText) {
-      return null;
-    }
-
-    return normalizePrice(priceText);
-  },
-
-  getName: ($) => {
-    const candidates = [
-      $("h1").first().text().trim(),
-      $(".product-title").first().text().trim(),
-      $('[class*="title"]').first().text().trim(),
-    ];
-
-    let name =
-      candidates.find((t) => t && t.length > 0) ||
-      (() => {
-        const titleTag = $("title").first().text().trim();
-        if (!titleTag) return null;
-        return titleTag.replace(/\s+[\|\-].*$/, "").trim();
-      })();
-
-    if (!name) {
-      return null;
-    }
-
-    return name.replace(/\s+/g, " ");
-  },
-};
-
-/**
- * Registre des sites supportés
- */
-const SITE_HANDLERS: SiteHandler[] = [topAchatHandler];
-
-function getHandlerForUrl(urlStr: string): SiteHandler {
-  let host: string;
-  try {
-    const u = new URL(urlStr);
-    host = u.hostname;
-  } catch {
-    throw new Error("URL invalide");
+function extractFirstValid($: CheerioAPI, selectors: string[]): string | null {
+  for (const sel of selectors) {
+    const text = $(sel).first().text().trim();
+    if (text) return text;
   }
-
-  const handler =
-    SITE_HANDLERS.find((h) => h.match(host, urlStr)) ?? null;
-
-  if (!handler) {
-    throw new Error(`Site non supporté pour le moment (${host})`);
-  }
-
-  return handler;
+  return null;
 }
 
-// --- API publique utilisée dans tout le projet ---
+function fallbackPrice($: CheerioAPI): string | null {
+  const body = $("body").text();
+  const match = body.match(/\d+[.,]\d{2}\s*€/);
+  return match?.[0] ?? null;
+}
+
+function fallbackName($: CheerioAPI): string | null {
+  const title = $("title").text().trim();
+  if (!title) return null;
+  return title.replace(/\s*[\|\-].*$/, "").trim();
+}
 
 export async function getPrice(url: string): Promise<number> {
-  const handler = getHandlerForUrl(url);
+  const cfg = getSiteConfig(url);
   const $ = await fetchDocument(url);
 
-  const price = handler.getPrice($);
-  if (price == null) {
-    throw new Error("Impossible de trouver le prix sur la page");
+  let raw = extractFirstValid($, cfg.priceSelectors);
+  if (!raw) raw = fallbackPrice($);
+
+  if (!raw) {
+    throw new Error("Impossible de trouver le prix sur la page.");
   }
 
-  return price;
+  return normalizePrice(raw);
 }
 
 export async function getProductName(url: string): Promise<string> {
-  const handler = getHandlerForUrl(url);
+  const cfg = getSiteConfig(url);
   const $ = await fetchDocument(url);
 
-  const name = handler.getName($);
+  let name = extractFirstValid($, cfg.nameSelectors);
+  if (!name) name = fallbackName($);
+
   if (!name) {
     throw new Error("Impossible de récupérer le nom du produit.");
   }
 
-  return name;
+  return name.replace(/\s+/g, " ");
 }
