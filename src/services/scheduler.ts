@@ -4,6 +4,7 @@ import {
   productsRepository,
   TrackedProduct,
 } from "../data/productsRepository";
+import { priceHistoryRepository } from "../data/priceHistoryRepository";
 import { getPrice } from "./priceChecker";
 
 export interface CheckResult {
@@ -28,6 +29,9 @@ export async function checkAllProductsOnce(
     try {
       const currentPrice = await getPrice(p.url);
       const triggered = currentPrice <= p.targetPrice;
+
+      // historique des prix
+      await priceHistoryRepository.add(p.id, currentPrice);
 
       console.log(
         `[CHECK] ${p.name} → ${currentPrice}€ (seuil: ${p.targetPrice}€) | triggered=${triggered}`

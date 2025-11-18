@@ -1,6 +1,7 @@
 import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
+  MessageFlags,
 } from "discord.js";
 import { checkAllProductsOnce } from "../services/scheduler";
 
@@ -9,7 +10,7 @@ export const data = new SlashCommandBuilder()
   .setDescription("Force une vérification immédiate de tes produits surveillés");
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const allResults = await checkAllProductsOnce(interaction.client, {
     notify: false,

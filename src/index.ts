@@ -6,6 +6,7 @@ import * as path from "path";
 import {
   ChatInputCommandInteraction,
   Interaction,
+  MessageFlags,
 } from "discord.js";
 
 type LoadedCommand = {
@@ -63,12 +64,12 @@ async function main() {
       if (interaction.deferred || interaction.replied) {
         await interaction.followUp({
           content: "❌ Erreur pendant l'exécution de la commande.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       } else {
         await interaction.reply({
           content: "❌ Erreur pendant l'exécution de la commande.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
     }

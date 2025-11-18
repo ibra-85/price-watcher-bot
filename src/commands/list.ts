@@ -1,6 +1,7 @@
 import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
+  MessageFlags,
 } from "discord.js";
 import { productsRepository } from "../data/productsRepository";
 
@@ -14,7 +15,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   if (produits.length === 0) {
     return interaction.reply({
       content: "📭 Tu ne surveilles encore aucun produit.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -27,6 +28,6 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   await interaction.reply({
     content: `📋 **Tes produits surveillés :**\n\n${text}`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }

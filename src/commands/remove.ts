@@ -1,6 +1,7 @@
 import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
+  MessageFlags,
 } from "discord.js";
 import { productsRepository } from "../data/productsRepository";
 
@@ -22,14 +23,14 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   if (!produit) {
     return interaction.reply({
       content: `❌ Aucun produit trouvé avec l'ID **${id}**.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
   if (produit.userId !== interaction.user.id) {
     return interaction.reply({
       content: "⛔ Tu ne peux pas supprimer un produit qui ne t'appartient pas.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -37,6 +38,6 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   return interaction.reply({
     content: `🗑️ Le produit **${produit.name}** (ID ${id}) a été retiré.`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
