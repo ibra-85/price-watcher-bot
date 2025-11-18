@@ -1,6 +1,21 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
 
+function normalizePrice(raw: string): number {
+  const normalized = raw
+    .replace(/\s/g, "")      // vire les espaces
+    .replace(",", ".")       // virgule → point
+    .replace(/[^\d.]/g, ""); // garde que chiffres + points
+
+  const price = parseFloat(normalized);
+
+  if (isNaN(price)) {
+    throw new Error(`Prix non parsable : ${raw}`);
+  }
+
+  return price;
+}
+
 async function getPriceFromTopAchat(url: string): Promise<number> {
   const res = await axios.get(url, {
     headers: {
@@ -11,27 +26,33 @@ async function getPriceFromTopAchat(url: string): Promise<number> {
 
   const $ = cheerio.load(res.data);
 
-  const priceText =
-    $(".fpPrice").first().text().trim() ||
-    $(".price").first().text().trim() ||
-    $(".price__amount").first().text().trim();
+  // On cible d'abord précisément ce que tu m'as montré
+  const candidates = [
+    $(".offer-price__price").first().text().trim(),
+    $(".offer-price").first().text().trim(),
+    $(".price-anico").first().text().trim(),
+    $('[class*="price"]').first().text().trim(), // fallback large
+  ];
+
+  // Debug utile pendant le dev
+  console.log("[TopAchat] Candidates brut :", candidates);
+
+  const priceText = candidates.find((t) => t && t.length > 0);
 
   if (!priceText) {
-    throw new Error("Impossible de trouver le prix sur la page");
+    // dernier fallback : chercher un pattern XX.xx € dans tout le texte
+    const bodyText = $("body").text();
+    const match = bodyText.match(/\d+[.,]\d{2}\s*€/);
+    console.log("[TopAchat] Fallback match global :", match?.[0]);
+
+    if (!match) {
+      throw new Error("Impossible de trouver le prix sur la page");
+    }
+
+    return normalizePrice(match[0]);
   }
 
-  const normalized = priceText
-    .replace(/\s/g, "")
-    .replace(",", ".")
-    .replace(/[^\d.]/g, "");
-
-  const price = parseFloat(normalized);
-
-  if (isNaN(price)) {
-    throw new Error(`Prix non parsable : ${priceText}`);
-  }
-
-  return price;
+  return normalizePrice(priceText);
 }
 
 export async function getPrice(url: string): Promise<number> {
