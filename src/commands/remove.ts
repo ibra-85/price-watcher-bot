@@ -2,7 +2,7 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
 } from "discord.js";
-import { productsStore } from "../data/productsStore";
+import { productsRepository } from "../data/productsRepository";
 
 export const data = new SlashCommandBuilder()
   .setName("remove")
@@ -17,7 +17,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction) {
   const id = interaction.options.getInteger("id", true);
 
-  const produit = productsStore.getById(id);
+  const produit = await productsRepository.getById(id);
 
   if (!produit) {
     return interaction.reply({
@@ -26,7 +26,14 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     });
   }
 
-  productsStore.remove(id);
+  if (produit.userId !== interaction.user.id) {
+    return interaction.reply({
+      content: "⛔ Tu ne peux pas supprimer un produit qui ne t'appartient pas.",
+      ephemeral: true,
+    });
+  }
+
+  await productsRepository.remove(id);
 
   return interaction.reply({
     content: `🗑️ Le produit **${produit.name}** (ID ${id}) a été retiré.`,

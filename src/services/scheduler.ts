@@ -1,20 +1,18 @@
 import cron from "node-cron";
 import { Client, TextChannel } from "discord.js";
-import { productsStore, TrackedProduct } from "../data/productsStore";
+import {
+  productsRepository,
+  TrackedProduct,
+} from "../data/productsRepository";
 import { getPrice } from "./priceChecker";
 
 export interface CheckResult {
   product: TrackedProduct;
   price?: number;
   error?: string;
-  triggered: boolean; // true si le seuil a été atteint ou dépassé
+  triggered: boolean;
 }
 
-/**
- * Vérifie tous les produits une fois.
- * - Si options.notify === true (par défaut), envoie des notifications Discord quand le seuil est atteint.
- * - Retourne toujours la liste des résultats pour utilisation (ex: /check).
- */
 export async function checkAllProductsOnce(
   client: Client,
   options?: { notify?: boolean }
@@ -23,7 +21,7 @@ export async function checkAllProductsOnce(
 
   console.log("[CHECK] Vérification des prix...");
 
-  const products = productsStore.getAll();
+  const products = await productsRepository.getAll();
   const results: CheckResult[] = [];
 
   for (const p of products) {
@@ -65,11 +63,8 @@ export async function checkAllProductsOnce(
   return results;
 }
 
-/**
- * Planifie une vérification régulière via cron.
- */
 export function setupScheduler(client: Client): void {
-  // toutes les 30 minutes (pour dev tu peux mettre "*/1 * * * *")
+  // Prod: "*/30 * * * *", Dev: "*/1 * * * *"
   cron.schedule("*/30 * * * *", () => {
     void checkAllProductsOnce(client, { notify: true });
   });

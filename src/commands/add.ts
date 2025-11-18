@@ -2,7 +2,7 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
 } from "discord.js";
-import { productsStore } from "../data/productsStore";
+import { productsRepository } from "../data/productsRepository";
 
 export const data = new SlashCommandBuilder()
   .setName("add")
@@ -29,9 +29,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction) {
   const url = interaction.options.getString("url", true);
   const seuil = interaction.options.getNumber("seuil", true);
-  const nom =
-    interaction.options.getString("nom") ||
-    `Produit ${productsStore.list().length + 1}`;
+  const nom = interaction.options.getString("nom");
 
   if (seuil <= 0) {
     return interaction.reply({
@@ -40,11 +38,15 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     });
   }
 
-  const produit = productsStore.add({
-    name: nom,
+  const existing = await productsRepository.list();
+  const name = nom || `Produit ${existing.length + 1}`;
+
+  const produit = await productsRepository.add({
+    name,
     url,
     targetPrice: seuil,
     channelId: interaction.channelId,
+    userId: interaction.user.id,
   });
 
   await interaction.reply({

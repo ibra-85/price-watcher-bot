@@ -2,18 +2,18 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
 } from "discord.js";
-import { productsStore } from "../data/productsStore";
+import { productsRepository } from "../data/productsRepository";
 
 export const data = new SlashCommandBuilder()
   .setName("list")
-  .setDescription("Liste les produits surveillés");
+  .setDescription("Liste les produits surveillés (pour toi)");
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  const produits = productsStore.list();
+  const produits = await productsRepository.listByUser(interaction.user.id);
 
   if (produits.length === 0) {
     return interaction.reply({
-      content: "📭 Aucun produit surveillé pour le moment.",
+      content: "📭 Tu ne surveilles encore aucun produit.",
       ephemeral: true,
     });
   }
@@ -26,7 +26,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     .join("\n\n");
 
   await interaction.reply({
-    content: `📋 **Produits surveillés :**\n\n${text}`,
+    content: `📋 **Tes produits surveillés :**\n\n${text}`,
     ephemeral: true,
   });
 }

@@ -3,9 +3,9 @@ import * as cheerio from "cheerio";
 
 function normalizePrice(raw: string): number {
   const normalized = raw
-    .replace(/\s/g, "")      // vire les espaces
-    .replace(",", ".")       // virgule → point
-    .replace(/[^\d.]/g, ""); // garde que chiffres + points
+    .replace(/\s/g, "")
+    .replace(",", ".")
+    .replace(/[^\d.]/g, "");
 
   const price = parseFloat(normalized);
 
@@ -26,21 +26,18 @@ async function getPriceFromTopAchat(url: string): Promise<number> {
 
   const $ = cheerio.load(res.data);
 
-  // On cible d'abord précisément ce que tu m'as montré
   const candidates = [
     $(".offer-price__price").first().text().trim(),
     $(".offer-price").first().text().trim(),
     $(".price-anico").first().text().trim(),
-    $('[class*="price"]').first().text().trim(), // fallback large
+    $('[class*="price"]').first().text().trim(),
   ];
 
-  // Debug utile pendant le dev
   console.log("[TopAchat] Candidates brut :", candidates);
 
   const priceText = candidates.find((t) => t && t.length > 0);
 
   if (!priceText) {
-    // dernier fallback : chercher un pattern XX.xx € dans tout le texte
     const bodyText = $("body").text();
     const match = bodyText.match(/\d+[.,]\d{2}\s*€/);
     console.log("[TopAchat] Fallback match global :", match?.[0]);

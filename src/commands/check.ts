@@ -6,18 +6,23 @@ import { checkAllProductsOnce } from "../services/scheduler";
 
 export const data = new SlashCommandBuilder()
   .setName("check")
-  .setDescription("Force une vérification immédiate de tous les produits surveillés");
+  .setDescription("Force une vérification immédiate de tes produits surveillés");
 
 export async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ ephemeral: true });
 
-  // Faire la vérification (on désactive les notifications)
-  const results = await checkAllProductsOnce(interaction.client, {
+  const allResults = await checkAllProductsOnce(interaction.client, {
     notify: false,
   });
 
+  const results = allResults.filter(
+    (r) => r.product.userId === interaction.user.id
+  );
+
   if (results.length === 0) {
-    return interaction.editReply("📭 Aucun produit surveillé pour le moment.");
+    return interaction.editReply(
+      "📭 Tu ne surveilles encore aucun produit. Utilise `/add` d'abord."
+    );
   }
 
   const lignes = results.map((r) => {

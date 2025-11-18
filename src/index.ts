@@ -16,7 +16,6 @@ type LoadedCommand = {
 async function main() {
   const client = createClient();
 
-  // Chargement des commandes slash
   const commands = new Map<string, LoadedCommand>();
   const commandsPath = path.join(__dirname, "commands");
   const commandFiles = fs
@@ -61,7 +60,6 @@ async function main() {
       await command.execute(interaction);
     } catch (err) {
       console.error("❌ Erreur dans la commande :", err);
-
       if (interaction.deferred || interaction.replied) {
         await interaction.followUp({
           content: "❌ Erreur pendant l'exécution de la commande.",
