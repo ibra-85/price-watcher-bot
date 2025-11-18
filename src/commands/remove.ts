@@ -1,4 +1,7 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction } from "discord.js";
+import {
+  SlashCommandBuilder,
+  ChatInputCommandInteraction,
+} from "discord.js";
 import { productsStore } from "../data/productsStore";
 
 export const data = new SlashCommandBuilder()
@@ -7,17 +10,18 @@ export const data = new SlashCommandBuilder()
   .addIntegerOption((opt) =>
     opt
       .setName("id")
-      .setDescription("L'ID du produit (voir /list)")
+      .setDescription("ID du produit (voir /list)")
       .setRequired(true)
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
   const id = interaction.options.getInteger("id", true);
 
-  const existing = productsStore.getById(id);
-  if (!existing) {
+  const produit = productsStore.getById(id);
+
+  if (!produit) {
     return interaction.reply({
-      content: `❌ Aucun produit avec l'ID **${id}**.`,
+      content: `❌ Aucun produit trouvé avec l'ID **${id}**.`,
       ephemeral: true,
     });
   }
@@ -25,7 +29,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   productsStore.remove(id);
 
   return interaction.reply({
-    content: `🗑️ Le produit **${existing.name}** (ID ${id}) a été retiré.`,
+    content: `🗑️ Le produit **${produit.name}** (ID ${id}) a été retiré.`,
     ephemeral: true,
   });
 }

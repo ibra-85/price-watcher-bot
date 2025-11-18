@@ -11,7 +11,6 @@ async function getPriceFromTopAchat(url: string): Promise<number> {
 
   const $ = cheerio.load(res.data);
 
-  // À ajuster selon le site
   const priceText =
     $(".fpPrice").first().text().trim() ||
     $(".price").first().text().trim() ||
@@ -40,6 +39,5 @@ export async function getPrice(url: string): Promise<number> {
     return getPriceFromTopAchat(url);
   }
 
-  // plus tard : ajouter Amazon, LDLC, etc.
   throw new Error("Site non supporté pour le moment");
 }

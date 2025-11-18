@@ -6,10 +6,18 @@ export interface TrackedProduct {
   channelId: string;
 }
 
+export interface ProductsStore {
+  add(product: Omit<TrackedProduct, "id">): TrackedProduct;
+  list(): TrackedProduct[];
+  getAll(): TrackedProduct[];
+  getById(id: number): TrackedProduct | undefined;
+  remove(id: number): boolean;
+}
+
 let products: TrackedProduct[] = [];
 let nextId = 1;
 
-export const productsStore = {
+export const productsStore: ProductsStore = {
   add(product: Omit<TrackedProduct, "id">): TrackedProduct {
     const newProduct: TrackedProduct = { id: nextId++, ...product };
     products.push(newProduct);
@@ -31,6 +39,6 @@ export const productsStore = {
   remove(id: number): boolean {
     const before = products.length;
     products = products.filter((p) => p.id !== id);
-    return products.length < before; // true si un élément a été retiré
+    return products.length < before;
   },
 };
