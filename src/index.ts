@@ -1,27 +1,42 @@
 import { createClient } from "./bot/client";
-import { config } from "./config/env";
-import { handleMessage } from "./bot/commands";
 import { setupScheduler } from "./services/scheduler";
+import { config } from "./config/env";
+import * as fs from "fs";
+import * as path from "path";
 
 async function main() {
   const client = createClient();
 
-  client.once("ready", () => {
-    console.log(`✅ Connecté en tant que ${client.user?.tag}`);
+  // Charger toutes les commandes en mémoire
+  const commands = new Map();
+  const commandsPath = path.join(__dirname, "commands");
+  const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith(".ts") || file.endsWith(".js"));
+
+  for (const file of commandFiles) {
+    const cmd = require(path.join(commandsPath, file));
+    commands.set(cmd.data.name, cmd);
+  }
+
+  client.once("clientReady", () => {
+    console.log(`🤖 Connecté en tant que ${client.user?.tag}`);
     setupScheduler(client);
   });
 
-  client.on("messageCreate", async (message) => {
+  client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+
+    const command = commands.get(interaction.commandName);
+    if (!command) return;
+
     try {
-      await handleMessage(message);
+      await command.execute(interaction);
     } catch (err) {
-      console.error("Erreur dans handleMessage :", err);
+      console.error(err);
+      await interaction.reply({ content: "❌ Erreur pendant l'exécution", ephemeral: true });
     }
   });
 
   await client.login(config.discordToken);
 }
 
-main().catch((err) => {
-  console.error("Erreur au démarrage :", err);
-});
+main();

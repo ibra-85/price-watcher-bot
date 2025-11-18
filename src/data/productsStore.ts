@@ -23,4 +23,14 @@ export const productsStore = {
   getAll(): TrackedProduct[] {
     return products;
   },
+
+  getById(id: number): TrackedProduct | undefined {
+    return products.find((p) => p.id === id);
+  },
+
+  remove(id: number): boolean {
+    const before = products.length;
+    products = products.filter((p) => p.id !== id);
+    return products.length < before; // true si un élément a été retiré
+  },
 };
