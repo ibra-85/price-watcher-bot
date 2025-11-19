@@ -6,6 +6,7 @@ import {
 } from "../data/productsRepository";
 import { priceHistoryRepository } from "../data/priceHistoryRepository";
 import { getPrice } from "./priceChecker";
+import { appConfig } from "../config/app";
 
 export interface CheckResult {
   product: TrackedProduct;
@@ -14,62 +15,104 @@ export interface CheckResult {
   triggered: boolean;
 }
 
+interface CheckOptions {
+  notify: boolean;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function notifyIfNeeded(
+  client: Client,
+  product: TrackedProduct,
+  price: number
+): Promise<void> {
+  const channel = await client.channels.fetch(product.channelId);
+  if (!channel || !channel.isTextBased()) {
+    return;
+  }
+
+  const textChannel = channel as TextChannel;
+
+  await textChannel.send(
+    `📉 **${product.name}** est passé à **${price}€** (seuil : ${product.targetPrice}€)\n${product.url}`
+  );
+}
+
+async function checkSingleProduct(
+  client: Client,
+  product: TrackedProduct,
+  options: CheckOptions
+): Promise<CheckResult> {
+  try {
+    const price = await getPrice(product.url);
+    await priceHistoryRepository.add(product.id, price);
+
+    const triggered = price <= product.targetPrice;
+
+    if (options.notify && triggered) {
+      try {
+        await notifyIfNeeded(client, product, price);
+      } catch (err) {
+        console.error(
+          `Erreur lors de la notification pour le produit ${product.id}:`,
+          err
+        );
+      }
+    }
+
+    return { product, price, triggered };
+  } catch (err: any) {
+    console.error(
+      `Erreur pendant la vérification du produit ${product.id} (${product.url}) :`,
+      err
+    );
+    return {
+      product,
+      error: err?.message ?? String(err),
+      triggered: false,
+    };
+  }
+}
+
 export async function checkAllProductsOnce(
   client: Client,
-  options?: { notify?: boolean }
+  options: CheckOptions
 ): Promise<CheckResult[]> {
-  const notify = options?.notify ?? true;
-
-  console.log("[CHECK] Vérification des prix...");
-
+  // ⚠️ Utilise la méthode existante productsRepository.getAll()
   const products = await productsRepository.getAll();
   const results: CheckResult[] = [];
 
-  for (const p of products) {
-    try {
-      const currentPrice = await getPrice(p.url);
-      const triggered = currentPrice <= p.targetPrice;
+  if (!products.length) {
+    console.log("ℹ️ Aucun produit à vérifier.");
+    return results;
+  }
 
-      // historique des prix
-      await priceHistoryRepository.add(p.id, currentPrice);
+  console.log(
+    `🔎 Vérification de ${products.length} produit(s) (notify=${options.notify})`
+  );
 
-      console.log(
-        `[CHECK] ${p.name} → ${currentPrice}€ (seuil: ${p.targetPrice}€) | triggered=${triggered}`
-      );
+    for (let i = 0; i < products.length; i += appConfig.scheduler.batchSize) {
+    const batch = products.slice(i, i + appConfig.scheduler.batchSize);
 
-      if (notify && triggered) {
-        const channel = await client.channels.fetch(p.channelId);
-        if (channel && channel.isTextBased()) {
-          await (channel as TextChannel).send(
-            `🔥 **Bon plan détecté !**\n` +
-              `**${p.name}** est à **${currentPrice}€** (seuil: ${p.targetPrice}€)\n` +
-              `${p.url}`
-          );
-        }
-      }
+    const batchResults = await Promise.all(
+      batch.map((p) => checkSingleProduct(client, p, options))
+    );
+    results.push(...batchResults);
 
-      results.push({
-        product: p,
-        price: currentPrice,
-        triggered,
-      });
-    } catch (err: any) {
-      console.error(`[CHECK] Erreur pour ${p.url}:`, err.message);
-
-      results.push({
-        product: p,
-        error: err?.message ?? String(err),
-        triggered: false,
-      });
+    if (i + appConfig.scheduler.batchSize < products.length) {
+      await sleep(appConfig.scheduler.delayBetweenBatchesMs);
     }
   }
 
+  console.log("✅ Vérification terminée.");
   return results;
 }
 
 export function setupScheduler(client: Client): void {
-  // Prod: "*/30 * * * *", Dev: "*/1 * * * *"
-  cron.schedule("*/30 * * * *", () => {
+  cron.schedule(appConfig.scheduler.cron, () => {
     void checkAllProductsOnce(client, { notify: true });
   });
 }
+

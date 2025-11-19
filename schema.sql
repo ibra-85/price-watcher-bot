@@ -18,3 +18,7 @@ CREATE TABLE price_history (
   checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
+
+CREATE INDEX idx_products_user_id ON products (user_id);
+CREATE INDEX idx_price_history_product_checked
+  ON price_history (product_id, checked_at);

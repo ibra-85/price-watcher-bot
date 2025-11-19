@@ -1,10 +1,11 @@
 import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
-  MessageFlags,
 } from "discord.js";
 import { productsRepository } from "../data/productsRepository";
 import { getProductName } from "../services/priceChecker";
+import { validateTrackedUrl } from "../utils/urlValidation";
+import { replyWithError } from "../utils/replyWithError";
 
 export const data = new SlashCommandBuilder()
   .setName("add")
@@ -20,6 +21,7 @@ export const data = new SlashCommandBuilder()
       .setName("seuil")
       .setDescription("Prix seuil")
       .setRequired(true)
+      .setMinValue(0.01) // Limite côté Discord (UX)
   )
   .addStringOption((opt) =>
     opt
@@ -29,44 +31,73 @@ export const data = new SlashCommandBuilder()
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  const url = interaction.options.getString("url", true);
+  const rawUrl = interaction.options.getString("url", true);
   const seuil = interaction.options.getNumber("seuil", true);
   const nomSaisi = interaction.options.getString("nom");
 
-  if (seuil <= 0) {
-    return interaction.reply({
-      content: "❌ Le seuil doit être supérieur à 0.",
-      flags: MessageFlags.Ephemeral,
-    });
+  // Validation de l'URL
+  let url: string;
+  try {
+    url = validateTrackedUrl(rawUrl);
+  } catch (err) {
+    await replyWithError(
+      interaction,
+      err instanceof Error
+        ? err.message
+        : "L'URL fournie n'est pas valide ou pas supportée."
+    );
+    return;
   }
 
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  // Validation du seuil côté serveur (en plus du setMinValue)
+  if (seuil <= 0) {
+    await replyWithError(
+      interaction,
+      "Le seuil doit être supérieur à 0."
+    );
+    return;
+  }
+
+  await interaction.deferReply({ flags: 1 << 6 }); // MessageFlags.Ephemeral
 
   const userId = interaction.user.id;
 
-  // Pour le fallback "Produit X"
-  const existing = await productsRepository.listByUser(userId);
-
   let finalName: string;
 
-  if (nomSaisi) {
-    finalName = nomSaisi;
+  // Si l'utilisateur a fourni un nom, on le garde (nettoyé)
+  if (nomSaisi && nomSaisi.trim()) {
+    finalName = nomSaisi.trim();
   } else {
+    // Sinon, on essaie de récupérer le nom automatiquement
     try {
       finalName = await getProductName(url);
     } catch (err) {
       console.error("[/add] Impossible de récupérer le nom du produit :", err);
+
+      // Fallback "Produit X" seulement si nécessaire
+      const existing = await productsRepository.listByUser(userId);
       finalName = `Produit ${existing.length + 1}`;
     }
   }
 
-  const produit = await productsRepository.add({
-    name: finalName,
-    url,
-    targetPrice: seuil,
-    channelId: interaction.channelId,
-    userId,
-  });
+  // Création du produit en base
+  let produit;
+  try {
+    produit = await productsRepository.add({
+      name: finalName,
+      url,
+      targetPrice: seuil,
+      channelId: interaction.channelId,
+      userId,
+    });
+  } catch (err) {
+    console.error("[/add] Erreur lors de l'enregistrement du produit :", err);
+    await replyWithError(
+      interaction,
+      "Impossible d'enregistrer le produit pour le moment. Réessaie plus tard."
+    );
+    return;
+  }
 
   await interaction.editReply({
     content:

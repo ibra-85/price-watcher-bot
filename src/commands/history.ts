@@ -5,6 +5,7 @@ import {
 } from "discord.js";
 import { productsRepository } from "../data/productsRepository";
 import { priceHistoryRepository } from "../data/priceHistoryRepository";
+import { replyWithError } from "../utils/replyWithError";
 
 export const data = new SlashCommandBuilder()
   .setName("history")
@@ -14,12 +15,14 @@ export const data = new SlashCommandBuilder()
       .setName("id")
       .setDescription("ID du produit (voir /list)")
       .setRequired(true)
+      .setMinValue(1)
   )
   .addIntegerOption((opt) =>
     opt
       .setName("limit")
       .setDescription("Nombre de points d'historique (défaut: 10)")
       .setRequired(false)
+      .setMinValue(1)
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
@@ -28,24 +31,50 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const product = await productsRepository.getById(id);
+  let product;
+  try {
+    product = await productsRepository.getById(id);
+  } catch (err) {
+    console.error("[/history] Erreur lors de la récupération du produit :", err);
+    await replyWithError(
+      interaction,
+      "Impossible de récupérer les informations du produit pour le moment."
+    );
+    return;
+  }
 
   if (!product) {
-    return interaction.editReply(`❌ Aucun produit trouvé avec l'ID **${id}**.`);
+    await interaction.editReply(`❌ Aucun produit trouvé avec l'ID **${id}**.`);
+    return;
   }
 
   if (product.userId !== interaction.user.id) {
-    return interaction.editReply(
+    await interaction.editReply(
       "⛔ Tu ne peux voir l'historique que de tes propres produits."
     );
+    return;
   }
 
-  const history = await priceHistoryRepository.listForProduct(id, limit);
+  let history;
+  try {
+    history = await priceHistoryRepository.listForProduct(id, limit);
+  } catch (err) {
+    console.error(
+      "[/history] Erreur lors de la récupération de l'historique de prix :",
+      err
+    );
+    await replyWithError(
+      interaction,
+      "Impossible de récupérer l'historique des prix pour le moment."
+    );
+    return;
+  }
 
   if (history.length === 0) {
-    return interaction.editReply(
+    await interaction.editReply(
       `📭 Aucun historique de prix trouvé pour **${product.name}**.`
     );
+    return;
   }
 
   const lignes = history

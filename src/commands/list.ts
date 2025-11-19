@@ -4,19 +4,30 @@ import {
   MessageFlags,
 } from "discord.js";
 import { productsRepository } from "../data/productsRepository";
+import { replyWithError } from "../utils/replyWithError";
 
 export const data = new SlashCommandBuilder()
   .setName("list")
   .setDescription("Liste les produits surveillés (pour toi)");
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  const produits = await productsRepository.listByUser(interaction.user.id);
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  let produits;
+  try {
+    produits = await productsRepository.listByUser(interaction.user.id);
+  } catch (err) {
+    console.error("[/list] Erreur lors de la récupération des produits :", err);
+    await replyWithError(
+      interaction,
+      "Impossible de récupérer ta liste de produits pour le moment."
+    );
+    return;
+  }
 
   if (produits.length === 0) {
-    return interaction.reply({
-      content: "📭 Tu ne surveilles encore aucun produit.",
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.editReply("📭 Tu ne surveilles encore aucun produit.");
+    return;
   }
 
   const text = produits
@@ -26,8 +37,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     )
     .join("\n\n");
 
-  await interaction.reply({
-    content: `📋 **Tes produits surveillés :**\n\n${text}`,
-    flags: MessageFlags.Ephemeral,
-  });
+  await interaction.editReply(
+    `📋 **Tes produits surveillés :**\n\n${text}`
+  );
 }

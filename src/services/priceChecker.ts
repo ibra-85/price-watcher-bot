@@ -1,9 +1,32 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { SITE_CONFIGS } from "../config/sites";
+import { appConfig } from "../config/app";
+
 
 type CheerioAPI = cheerio.CheerioAPI;
+type SiteConfig = (typeof SITE_CONFIGS)[number];
 
+// Client HTTP configuré (timeout + User-Agent)
+const http = axios.create({
+  timeout: appConfig.http.timeoutMs,
+  headers: {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 PriceWatcherBot/1.0",
+    "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+  },
+});
+
+
+/**
+ * Normalise une chaîne de prix en nombre (en euros).
+ * Gère des formats du type :
+ *  - "699€95"
+ *  - "699 € 95"
+ *  - "699,95 €"
+ *  - "699.95 €"
+ *  - "€ 699,95"
+ */
 function normalizePrice(raw: string): number {
   const trimmed = raw.replace(/\s+/g, " ").trim();
 
@@ -15,73 +38,111 @@ function normalizePrice(raw: string): number {
     return euros + cents / 100;
   }
 
-  // Cas classiques "399.99 €", "399,99 €", etc.
-  const cleaned = trimmed
-    .replace(/\s/g, "")
-    .replace(",", ".")
-    .replace(/[^\d.]/g, "");
+  // Cas classiques : "699,95 €", "699.95 €", "€699,95"…
+  // 1) on enlève tout ce qui n'est pas chiffre, virgule ou point
+  const cleaned = trimmed.replace(/[^\d,\.]/g, "");
 
-  const price = parseFloat(cleaned);
-  if (isNaN(price)) {
-    throw new Error(`Prix non parsable : ${raw}`);
+  // 2) on remplace la virgule par un point (format décimal JS)
+  const normalized = cleaned.replace(",", ".");
+
+  // 3) on parse
+  const value = parseFloat(normalized);
+  if (Number.isNaN(value)) {
+    throw new Error(`Impossible de parser le prix : "${raw}"`);
+  }
+
+  return value;
+}
+
+/**
+ * Récupère la config de site correspondant à une URL.
+ * Utilise la fonction `match` définie dans SITE_CONFIGS.
+ */
+function getSiteConfig(url: string): SiteConfig {
+  const cfg = SITE_CONFIGS.find((c) => c.match(url));
+  if (!cfg) {
+    throw new Error("Ce site n'est pas encore supporté par le bot.");
+  }
+  return cfg;
+}
+
+/**
+ * Essaie une liste de sélecteurs CSS et retourne le premier texte non vide.
+ */
+function extractFirstValid(
+  $: CheerioAPI,
+  selectors: string[]
+): string | null {
+  for (const selector of selectors) {
+    const el = $(selector).first();
+    if (!el || el.length === 0) continue;
+
+    const text = el.text().replace(/\s+/g, " ").trim();
+    if (text) {
+      return text;
+    }
+  }
+  return null;
+}
+
+/**
+ * Fallback pour le nom du produit si les sélecteurs spécifiques échouent.
+ */
+function fallbackName($: CheerioAPI): string | null {
+  // og:title
+  const ogTitle =
+    $('meta[property="og:title"]').attr("content") ??
+    $('meta[name="og:title"]').attr("content");
+  if (ogTitle && ogTitle.trim()) {
+    return ogTitle.trim();
+  }
+
+  // <title>
+  const title = $("title").first().text().replace(/\s+/g, " ").trim();
+  if (title) {
+    return title;
+  }
+
+  // <h1>
+  const h1 = $("h1").first().text().replace(/\s+/g, " ").trim();
+  if (h1) {
+    return h1;
+  }
+
+  return null;
+}
+
+/**
+ * Télécharge la page et renvoie un objet Cheerio prêt à être interrogé.
+ */
+async function fetchDocument(url: string): Promise<CheerioAPI> {
+  const response = await http.get<string>(url);
+  return cheerio.load(response.data);
+}
+
+/**
+ * Récupère le prix actuel d'un produit à partir de son URL.
+ */
+export async function getPrice(url: string): Promise<number> {
+  const cfg = getSiteConfig(url);
+  const $ = await fetchDocument(url);
+
+  const priceText = extractFirstValid($, cfg.priceSelectors);
+  if (!priceText) {
+    throw new Error("Impossible de trouver le prix sur la page.");
+  }
+
+  const price = normalizePrice(priceText);
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error("Le prix récupéré est invalide.");
   }
 
   return price;
 }
 
-async function fetchDocument(url: string): Promise<CheerioAPI> {
-  const res = await axios.get(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-    },
-  });
-
-  return cheerio.load(res.data);
-}
-
-function getSiteConfig(url: string) {
-  const cfg = SITE_CONFIGS.find((s) => s.match(url));
-  if (!cfg) {
-    throw new Error("Site non supporté pour le moment.");
-  }
-  return cfg;
-}
-
-function extractFirstValid($: CheerioAPI, selectors: string[]): string | null {
-  for (const sel of selectors) {
-    const text = $(sel).first().text().trim();
-    if (text) return text;
-  }
-  return null;
-}
-
-function fallbackPrice($: CheerioAPI): string | null {
-  const body = $("body").text();
-  const match = body.match(/\d+[.,]\d{2}\s*€/);
-  return match?.[0] ?? null;
-}
-
-function fallbackName($: CheerioAPI): string | null {
-  const title = $("title").text().trim();
-  if (!title) return null;
-  return title.replace(/\s*[\|\-].*$/, "").trim();
-}
-
-export async function getPrice(url: string): Promise<number> {
-  const cfg = getSiteConfig(url);
-  const $ = await fetchDocument(url);
-
-  let raw = extractFirstValid($, cfg.priceSelectors);
-  if (!raw) raw = fallbackPrice($);
-
-  if (!raw) {
-    throw new Error("Impossible de trouver le prix sur la page.");
-  }
-
-  return normalizePrice(raw);
-}
-
+/**
+ * Récupère le nom du produit à partir de son URL.
+ */
 export async function getProductName(url: string): Promise<string> {
   const cfg = getSiteConfig(url);
   const $ = await fetchDocument(url);
