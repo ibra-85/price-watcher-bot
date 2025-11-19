@@ -73,6 +73,14 @@ DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=
 DB_NAME=price_watcher
+
+# Tuning du scheduler (optionnel)
+PRICE_CHECK_CRON=*/30 * * * *
+PRICE_CHECK_BATCH_SIZE=5
+PRICE_CHECK_DELAY_MS=4000
+
+# Timeout HTTP pour le scraping (ms)
+HTTP_TIMEOUT_MS=10000
 ```
 
 Ne jamais commiter ce fichier.
